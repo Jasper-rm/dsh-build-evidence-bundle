@@ -1,0 +1,161 @@
+# The `evidence-bundle` agent preset —— 中国诉讼「证据清单＋证据材料卷」工作台。
+#
+# 这是一个 AGENT-PLANE composition。roster 在进程内只挂载一次，每个选择本 preset
+# 的 session 通过 scope 父子关系加入，因此这里注册的工具与 prompt 段覆盖每一个
+# 加入的 agent，而 session 自身状态仍按 Session/Agent 键控。host composition 保留
+# preset 不得拥有的东西：注册表本身、沙箱与审批栈、持久化、模型路由。
+#
+# 本 preset 的业务能力来自它自带的 Skill：
+#   skills/build-evidence-bundle/   ← 上游 mattwang1230/build-evidence-bundle v19.0.1
+# SKILL.md 与 references/ 保持上游原样，便于按上游版本整体替换；DSH 宿主事实
+# （解释器、脚本调用形态、沙箱可写范围、审批、交互映射）集中在 preset 添加的
+# references/dsh-host-adapter.md，persona 会要求 agent 在动手前先读它。
+#
+# 本文件没有任何行提供 service，因此不需要 isolate realm：下面每一行要么把工具
+# 注册进 host 注册表在本 preset scope 上的分层（tools / skills / systemPrompt），
+# 要么消费 host 侧的服务（shell executor、fs、jobs registry、skill registry）。
+# 反过来，给只消费 host 服务的行套 realm 会让它解析不到那个实例而永不激活。
+
+# ── 身份 ────────────────────────────────────────────────────────────────────
+
+# 上游把 Codex 形态的 UI 元数据放在 agents/openai.yaml（display_name /
+# short_description / default_prompt）；DSH 的等价物是 preset.yml 的
+# name/description 加这里的 persona。default_prompt 的语义已并入 prefix。
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: |
+      你现在运行在「证据卷宗模式」，一个面向中国诉讼材料整理的工作台，由 {{model}} 模型驱动。当前工作目录是 {{cwd}}。
+
+      你的职责是读取用户提供的本地案件材料（图片、本地视频或录屏、经只读预检的 XLSX/PPTX/DOCX），生成统一 A4 版式、可编辑的「证据清单＋内嵌证据材料」Word 卷，并保留可复核的「视频—时间码—截帧—材料编号」与来源链。你协助律师工作，不提供法律意见；所有产物必须经有资格的律师复核后才能使用。
+
+      开始任何实质工作前：
+      1. 先用 skill 工具加载 `build-evidence-bundle`：它是本模式的核心工作流，不得凭记忆复述或简化；
+      2. 再读该 Skill 的 `references/dsh-host-adapter.md`，它说明本宿主的解释器、脚本调用形态、可写范围、审批和交互映射；
+      3. 然后按 SKILL.md「必须读取」清单读取本次任务真正相关的 references。
+
+      硬规则（优先于任何效率考虑）：
+      1. 先检测，后安装。缺依赖时先实跑能力探测，再一次性请求授权；不让用户自己研究命令、PATH 或分别安装 FFmpeg/FFprobe，不从不明来源下载二进制，不在对话中索要任何 API key。
+      2. 交互硬停止。用户未实际回答关键缺口前，不得创建可生成的 Manifest，不得调用 build_evidence_bundle.py，不得生成任何 DOCX；`--allow-draft` 不能绕过。每轮 1—3 问，一问只处理一个 `entity_ref + field_key`，前置问题未解决时不问依赖细节。
+      3. 不得伪造。不得伪造截帧、页面、来源、页码、金额、姓名、案号或核验结论。缺少工具、材料或独立页面复核时保持 HOLD/BLOCKED，并具体说明阻断原因与仍然可用的能力。
+      4. 事实层级分明。用户陈述、写作选择和「追问完成」都不能升级为已核验事实或来源；`material_review` 只是流程授权，不是用户提供的事实。
+      5. 本地边界。默认只处理本地材料：不得把案件材料、当事人信息或金额发送到任何外部服务，也不得用案件内容做联网检索。
+      6. Word 洁净。Word 中不得出现本机路径、哈希、`material_id`、内部索引标题、载体字段或「案号待补/暂缺」等占位；它们只留在 Manifest 与 QA 侧车中。
+
+      交付时用 present 工具把 Word 卷与 JSON 侧车呈现给用户，并在回复中说明生成状态（PASS/HOLD/BLOCKED/DRAFT）、未决字段和仍需人工复核的事项。
+    suffix: |
+      本模式已预置证据卷工作流所需的工具面。不要因为缺少 subagent、workflow 或 plan mode 而改变 SKILL.md 的流程；需要扩展工具面时，请用户复制本 preset 目录并编辑 agent.cordis.yml —— preset 安装目录对会话是只读的，不要在本会话内修改它。
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# 两个 shell 工具都消费 host 侧的 executors（bash-sandbox / pwsh-sandbox），
+# 自身不提供 service，所以都不需要 realm，与 shipped presets 一致。
+# 上游 Skill 同时支持 Windows/macOS/Linux，所以两个都留，用平台门控二选一：
+# 上游示例是 PowerShell 代码块，但脚本本身跨平台，POSIX 上按 bash 形态调用即可
+# （见 references/dsh-host-adapter.md 的等价命令表）。
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 文件系统 ────────────────────────────────────────────────────────────────
+
+# tool-fs 提供 read/write/edit（含 read_image），是本工作流查看案件图片、
+# 编写 Manifest、写派生输出的主力；fs service 与它的 policy 留在 host。
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── 后台作业 ────────────────────────────────────────────────────────────────
+
+# 大批量图片解码、视频截帧和 DOCX 生成可能长时间运行。作业注册表留在 host
+# （tool-bash 用 ctx.get 解析它，同 preset 内的 realm 对兄弟行不可见），
+# 这里只贡献模型可见的收集/停止控制。
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# skill 注册表在 host composition 里并按 scope 分层：这两行注册进本 preset 的
+# 那一层，因此不需要 realm。customSkillDirs 用 preset 自身目录作 baseUrl，
+# 于是 Skill 随 preset 一起被复制、安装和升级，不依赖用户级 skill 根。
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── 目标与计划 ──────────────────────────────────────────────────────────────
+
+# 目标服务与会话驱动留在 host（Gateway 要解析它们），命令与工具注册进本
+# preset 的分层。证据卷是多轮任务，目标用于跨轮收敛。
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── 压缩 ────────────────────────────────────────────────────────────────────
+
+# 本工作流会读入大量图片、盘点 JSON 和 Office 预检结果。compaction-basic 通过
+# ctx.get 读 toolResultPrune，所以 pruner 必须与它同 realm，不能放在组外；
+# tokenMeter 留在 host，这里的行解析那一个实例。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── 交互与剩余模型可见行 ────────────────────────────────────────────────────
+
+# 上游的 intake_clarification 硬停止在本宿主由 ask_user_question 承载：
+# 结构化选项正好满足「一问一个 entity_ref + field_key、每轮 1—3 问、
+# 必须提供不知道/不提供/稍后补充/回查材料」的要求。
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: false
+
+# 联网工具仅用于查询工具链文档一类的通用信息。persona 已明确禁止把案件材料、
+# 当事人信息或金额用于联网检索；若要收紧到纯本地，删掉这一行即可。
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
+
+# 交付面：生成的 DOCX 与 JSON 侧车用 present 注册，用户可直接在 GUI 打开。
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'

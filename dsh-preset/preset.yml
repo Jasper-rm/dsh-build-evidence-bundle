@@ -1,0 +1,5 @@
+name: 证据卷宗模式
+description: >-
+  以 build-evidence-bundle v19.0.1 工作流整理中国诉讼证据：只读盘点图片、本地视频与 Office 材料，
+  按「请求/抗辩—法律要件—待证事实—证据作用—材料位置」生成可编辑的「证据清单＋内嵌证据材料」Word 卷，
+  并执行来源、证明范围、覆盖缺口、Office sidecar 与原始载体硬校验；缺工具或核验时保持 HOLD/BLOCKED。

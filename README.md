@@ -21,6 +21,16 @@
 
 也可以将解压后的 `build-evidence-bundle` 目录放入本机 Codex Skills 目录。
 
+## 在 DeepSeek Harness 中使用
+
+本仓库同时提供一个 DeepSeek Harness（DSH）agent preset，使该 Skill 成为一个可在 GUI 中选择的会话模式：
+
+```sh
+sh dsh-preset/install.sh
+```
+
+安装后在 DSH 的 preset 选择器中选择「证据卷宗模式」新建会话即可。该 preset 不复制本仓库内容 —— 仓库根目录即 Skill 目录，安装时组装；DSH 宿主相关事实集中在 `dsh-preset/skills/build-evidence-bundle/references/dsh-host-adapter.md`，`SKILL.md` 与其余 `references/` 保持原样。详见 [`dsh-preset/README.md`](dsh-preset/README.md)。
+
 ## 依赖
 
 - 基础：Python 3.10+、`python-docx`、`Pillow`；
