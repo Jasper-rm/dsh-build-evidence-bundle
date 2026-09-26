@@ -174,7 +174,7 @@ macOS 上 FFmpeg 由 Homebrew 提供时，可执行文件通常需要显式传�
 大盘点、批量截帧和正式生成可能远超单次命令的超时：用 bash 工具的
 `run_in_background: true` 起后台作业，再用 `job_output` 收集，不要靠加大超时硬等。
 
-## 4. 可写范围与文件沙箱
+## 5. 可写范围与文件沙箱
 
 - 会话工作目录（`{{cwd}}`，即当前 session 的 workspace）是**唯一默认可写区域**。
 - 派生输出**全部放在 workspace 内**：隔离帧目录、盘点 JSON、Office 预检 JSON、sidecar、
@@ -191,7 +191,7 @@ macOS 上 FFmpeg 由 Homebrew 提供时，可执行文件通常需要显式传�
 - 隐私：本 preset 的产物可能包含真实案件材料。公开或分发任何派生包之前运行上游
   `scripts/package_check.py`，并遵守 `references/publication-safety.md`。
 
-## 5. 审批与交互映射
+## 6. 审批与交互映射
 
 - 上游的 **intake_clarification 硬停止**在本宿主由 `ask_user_question` 承载：结构化选项
   正好满足上游"一问一个 `entity_ref` + `field_key`、每轮 1—3 问"的纪律。选项必须覆盖
@@ -204,18 +204,20 @@ macOS 上 FFmpeg 由 Homebrew 提供时，可执行文件通常需要显式传�
   授权**，与上游 1.2 的授权语义一致；不要循环请求，也不要在宿主拒绝后换措辞重问。
 - 本 preset 不需要任何凭据：不要在对话中索要 API key。
 
-## 6. 交付
+## 7. 交付
 
 生成并通过 QA 后，用 `present` 工具把最终 DOCX 与 JSON 侧车（覆盖矩阵、QA 结果）呈现给用户，
 使用户能直接在 GUI 中打开；随后在回复中说明生成状态（PASS/HOLD/BLOCKED/DRAFT）、未决字段
 和仍需人工复核的事项。Word 内部洁净性约束（不得出现路径、哈希、内部编号、载体字段、
 「案号待补/暂缺」占位）由上游 `qa_bundle.py` 复核，`present` 只负责交付文件本身。
 
-## 7. 与上游的差异清单
+## 8. 与上游的差异清单
 
 - `agents/openai.yaml`（Codex UI 元数据：display_name / short_description / default_prompt）
   已转换为 `preset.yml` 的 `name`/`description` 与 persona，不再是运行时文件。
 - 上游 `evals/` 未随本 preset 分发（上游运行时安装包同样排除）。需要时按 preset 根目录
   `SOURCE.md` 的说明重新获取。
+- 新增本机 OCR 工具 `dsh-ocr`（macOS Vision 框架），本 preset 的默认文字识别路径，
+  全程离线；是否上云由用户决定。
 - 工具面未挂载 subagent / workflow / ralph / plan mode：它们不属于本工作流。需要时在
   `agent.cordis.yml` 中追加对应行，保持"提供 service 的行必须带 isolate realm"的规则。
