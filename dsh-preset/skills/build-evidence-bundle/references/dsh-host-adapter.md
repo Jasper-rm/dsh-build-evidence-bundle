@@ -70,9 +70,10 @@ FFmpeg 套件已随 preset 安装就绪，`ffmpeg` 与 `ffprobe` 都在 PATH 上
   `office_capabilities.py` 报 `pdf_to_png: available`，并按本 Skill 的发现顺序优先选 `pdftoppm`。
   两者都以 180 DPI 渲染 PNG；实测含中文的 PDF 两条路径都能正常出图（分辨率与文本区墨迹占比一致，
   无缺字或空白页）。
-- **仍不可用**：Office 源文件 → PDF 转换（本机无 LibreOffice）。这是 Office 材料入卷链上**唯一**
-  剩下的缺口 —— PDF 之后的光栅化环节已经打通。缺 LibreOffice 时 Office 材料仍可只读预检，
-  但不能生成可入卷证据页；需要时按上游规则只请求一次安装授权。
+- **Office 转换已就绪，但有两个必踩的坑**：LibreOffice 26.8.0.3 已安装（官方 dmg，位于
+  `/Applications/LibreOffice.app`），Office → PDF → PNG 全链路已实测跑通。但下面的
+  「Office 转换：两个本机陷阱」是**动手前必读**：踩中会静默产出一份中文全是方框、
+  看起来却完全正常的证据页。
 - 任何任务的 QA 都会保持 `HOLD/RENDER_REVIEW_UNAVAILABLE`：本机没有独立页面渲染复核能力
   （需要 LibreOffice 或等效渲染链）。这是上游设计的正确结果，不要声称视觉验收已通过。
 
@@ -87,6 +88,44 @@ FFmpeg 套件已随 preset 安装就绪，`ffmpeg` 与 `ffprobe` 都在 PATH 上
   USTC 镜像，该镜像缺少本机（macOS 27）的预编译包，会报 `no bottle available` 或校验和不匹配。
   需要时把两个域同时覆盖为官方源：
   `HOMEBREW_API_DOMAIN=https://formulae.brew.sh/api HOMEBREW_BOTTLE_DOMAIN=https://ghcr.io/v2/homebrew/core`。
+
+### Office 转换：两个本机陷阱（动手前必读）
+
+**陷阱一：LibreOffice 不在 PATH 上。** 官方 dmg 装到 `/Applications`，而本 Skill 的
+`discover(["soffice","libreoffice"])` 只按名字在 PATH 里找，因此默认探测会报
+`office_to_pdf: unavailable` —— 明明装了却报没有。本机已用用户级包装器解决：
+
+    ~/.local/bin/soffice                                  # 普通文件，不是符号链接
+    ~/.config/dsh-evidence-bundle/libreoffice-fonts.conf  # 它注入的字体配置
+
+`~/.local/bin` 已在 PATH 上，所以 `office_capabilities.py` 现在能直接发现它。
+
+> **维护警告**：不要把这个包装器写成指向 `/Applications/LibreOffice.app/Contents/MacOS/soffice`
+> 的符号链接，也不要用 `cat >` / `>` 去覆盖它 —— shell 会跟随符号链接，把应用包里的 Mach-O
+> 启动器直接截断。`CFBundleExecutable` 就是它，被截断后 LibreOffice 完全无法启动。
+> 需要它的原始副本时，从官方 dmg 提取 `LibreOffice.app/Contents/MacOS/soffice`。
+
+**陷阱二：隔离 profile 看不到 macOS 系统字体（最容易漏）。** `convert_office.py` 有意用
+`-env:UserInstallation=<全新空目录>` 做隔离转换；在这种模式下，LibreOffice 只读它自带的
+fontconfig 配置，而那份配置**不含任何 macOS 字体目录**。后果：
+
+- 转换**不报错**，sidecar 正常生成，PDF 正常产出；
+- 但 PDF 里只剩 LibreOffice 自带的拉丁字体（Caladea / LiberationSerif / DejaVuSans），
+  **中文全部渲染成方框**；渲染页墨迹占比只有约 0.10%（正常应约 1.2%）；
+- 交付出去就是一份结构完整、实际完全不可用的中文证据页。
+
+包装器在检测到 `--headless` 时注入 `FONTCONFIG_FILE` 指向上面那份配置（列出
+`/System/Library/Fonts`、`/System/Library/Fonts/Supplemental`、`/Library/Fonts` 以及
+LibreOffice 自带字体目录），问题即消除；GUI 启动不受影响。
+
+**因此：Office 材料入卷后必须做视觉复核，不能只看脚本退出码。** 自查方法：
+
+    pdffonts "<派生目录>/OFF001.pdf"   # 应出现 STSongti / HiraMaruPro / MS-Gothic 等中文字体
+    # 只列出 Caladea / LiberationSerif / DejaVuSans → 字体链路断了，停止并报告
+
+再用 `read_image` 打开 `*-page-001.png` 亲眼确认中文可读，然后才继续后续入卷步骤。
+这正是上游要求「自动转换生成的 sidecar 默认仍为 HOLD」的原因：字体、空白页、可读性必须人工确认。
+
 
 探测到缺失时按上游规则处理：报告缺什么 → **一次性**请求授权 → 用可信来源安装 →
 安装后**实跑验证**（视频能力必须用合成视频真实截出一帧，不能只看命令是否存在）。

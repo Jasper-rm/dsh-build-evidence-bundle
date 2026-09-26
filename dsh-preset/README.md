@@ -43,6 +43,31 @@ DSH Desktop 的 `DSH_HOME` 形如 `~/Library/Application Support/dsh-desktop/har
 
 缺可选工具时，Skill 会按自身规则保留可复核盘点并返回 HOLD/BLOCKED，不会伪造截帧或来源。
 
+### Office 材料入卷：LibreOffice 的两个坑（macOS）
+
+用官方 dmg 装好 LibreOffice 后，**直接跑转换会得到一份中文全是方框、看起来却完全正常的
+证据页** —— 不报错、sidecar 正常、PDF 正常产出，但字体链路是断的。原因有两个：
+
+1. LibreOffice 装在 `/Applications`，**不在 PATH 上**，而 Skill 按名字在 PATH 里找，
+   于是默认探测会报 `office_to_pdf: unavailable`（明明装了却报没有）；
+2. 本 Skill 有意用 `-env:UserInstallation=<空目录>` 做**隔离 profile** 转换，该模式下
+   LibreOffice 只读自带 fontconfig 配置，而那份配置不含任何 macOS 字体目录 ——
+   中文因此全部渲染成方框，PDF 里只剩自带拉丁字体。
+
+`dsh-preset/install.sh` **不替你改宿主环境**，它只做 preset 组装。这两项的配置方法
+（一个 `~/.local/bin/soffice` 包装器 + 一份字体配置）见
+[`skills/build-evidence-bundle/references/dsh-host-adapter.md`](skills/build-evidence-bundle/references/dsh-host-adapter.md)
+的「Office 转换：两个本机陷阱」。
+
+**无论怎么配，Office 入卷后都要复核字体，不能只看脚本退出码：**
+
+```sh
+pdffonts "<派生目录>/OFF001.pdf"   # 应出现 STSongti / HiraMaruPro / MS-Gothic 等中文字体
+```
+
+再用 `read_image` 打开渲染页亲眼确认中文可读。`office-provenance.json` 默认是 `HOLD`，
+正是为了强制这一步人工确认。
+
 ## 设计要点
 
 - **plane 划分**：`agent.cordis.yml` 是 agent-plane composition，只注册工具与 prompt 段；
