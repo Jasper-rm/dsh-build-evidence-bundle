@@ -66,8 +66,13 @@ FFmpeg 套件已随 preset 安装就绪，`ffmpeg` 与 `ffprobe` 都在 PATH 上
   QA 结构门禁；以及**视频材料入卷全流程**（合成 fixture：截帧 3 帧 → 正式生成 → 3 个附件页 /
   3 个书签 / 2 个 PAGEREF / 页脚 PAGE 域）。
 - **失败路径同样已验证**：损坏视频会以真实解码错误停下并**不产生任何帧或目录**，不会伪造截帧。
-- **仍不可用**：Office → PDF 转换（本机无 LibreOffice）。这只影响"Office 材料确需入卷"的场景，
-  只读预检仍可用；遇到这类需求按上游规则说明可预检但不能生成可入卷证据页。
+- **PDF 光栅化已就绪**：`pdftoppm` 26.09.0 与 `mutool` 1.28.5 都在 PATH 上，
+  `office_capabilities.py` 报 `pdf_to_png: available`，并按本 Skill 的发现顺序优先选 `pdftoppm`。
+  两者都以 180 DPI 渲染 PNG；实测含中文的 PDF 两条路径都能正常出图（分辨率与文本区墨迹占比一致，
+  无缺字或空白页）。
+- **仍不可用**：Office 源文件 → PDF 转换（本机无 LibreOffice）。这是 Office 材料入卷链上**唯一**
+  剩下的缺口 —— PDF 之后的光栅化环节已经打通。缺 LibreOffice 时 Office 材料仍可只读预检，
+  但不能生成可入卷证据页；需要时按上游规则只请求一次安装授权。
 - 任何任务的 QA 都会保持 `HOLD/RENDER_REVIEW_UNAVAILABLE`：本机没有独立页面渲染复核能力
   （需要 LibreOffice 或等效渲染链）。这是上游设计的正确结果，不要声称视觉验收已通过。
 
